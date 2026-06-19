@@ -1,5 +1,5 @@
-import { DEFAULT_PORT } from "./shared";
-import { startServer } from "./app";
+import { DEFAULT_PORT } from "../core/shared";
+import { startServer } from "../server/app";
 
 startServer(DEFAULT_PORT)
   .then(() => {

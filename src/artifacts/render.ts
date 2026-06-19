@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ArtifactType, TEMPLATE_DIR } from "./shared";
+import { ArtifactType, TEMPLATE_DIR } from "../core/shared";
 
 export const MAX_RENDERED_BYTES = 16 * 1024 * 1024;
 

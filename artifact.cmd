@@ -1,2 +1,2 @@
 @echo off
-node "%~dp0dist\cli.js" %*
+node "%~dp0dist\bin\cli.js" %*

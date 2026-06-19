@@ -5,9 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc",
-    "serve": "node dist/server.js",
-    "artifact": "node dist/cli.js",
-    "verify": "node dist/verify.js"
+    "serve": "node dist/bin/server.js",
+    "artifact": "node dist/bin/cli.js",
+    "verify": "node dist/testing/verify.js"
   },
   "dependencies": {
     "sql.js": "^1.13.0"

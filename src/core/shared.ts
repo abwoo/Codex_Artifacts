@@ -3,7 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import initSqlJs, { Database } from "sql.js";
 
-export const ROOT = path.resolve(__dirname, "..");
+export const ROOT = process.cwd();
 export const DATA_DIR = path.join(ROOT, "data");
 export const DB_PATH = path.join(DATA_DIR, "codex-artifacts.sqlite");
 export const ARTIFACT_DIR = path.join(ROOT, "artifacts");

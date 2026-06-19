@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import fs from "node:fs";
-import { startServer } from "./app";
-import { CONFIG_PATH, DEFAULT_PORT } from "./shared";
+import { startServer } from "../server/app";
+import { CONFIG_PATH, DEFAULT_PORT } from "../core/shared";
 
 async function main(): Promise<void> {
   process.env.CODEX_ARTIFACT_AUTO_OPEN = "0";

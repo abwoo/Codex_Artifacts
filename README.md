@@ -10,4 +10,6 @@ npm run build
 
 Codex Artifacts gives you private local links, live updates, pinned versions, a gallery, sandboxed rendering, and local organization permissions.
 
+See `docs/PARITY.md` for the Claude Code Artifacts parity checklist.
+
 Not affiliated with Anthropic.
