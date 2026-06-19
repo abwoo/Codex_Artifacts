@@ -1,0 +1,19 @@
+{
+  "name": "codex-local-artifacts",
+  "version": "0.2.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "serve": "node dist/server.js",
+    "artifact": "node dist/cli.js",
+    "verify": "node dist/verify.js"
+  },
+  "dependencies": {
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.3"
+  }
+}

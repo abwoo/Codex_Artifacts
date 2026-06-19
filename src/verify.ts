@@ -1,0 +1,136 @@
+import { once } from "node:events";
+import fs from "node:fs";
+import { startServer } from "./app";
+import { CONFIG_PATH, DEFAULT_PORT } from "./shared";
+
+async function main(): Promise<void> {
+  process.env.CODEX_ARTIFACT_AUTO_OPEN = "0";
+  const server = await startServer(DEFAULT_PORT);
+  try {
+    const base = `http://127.0.0.1:${DEFAULT_PORT}`;
+    const creator = { "Content-Type": "application/json", "X-Codex-User": "creator" };
+    const admin = { "Content-Type": "application/json", "X-Codex-User": "admin" };
+    const outsider = { "Content-Type": "application/json", "X-Codex-User": "outsider" };
+
+    await fetch(`${base}/api/admin/enable`, { method: "POST", headers: admin, body: "{}" });
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ permissions: { deny: [] } }, null, 2));
+    const approvalRequired = await fetch(`${base}/api/artifacts`, {
+      method: "POST",
+      headers: creator,
+      body: JSON.stringify({ title: "Needs Approval", type: "dashboard", content: "## Nope", sourceType: "inline", sourcePath: "approval" })
+    });
+    assert(approvalRequired.status === 409, "publish without approval is rejected");
+    const published = await json(await fetch(`${base}/api/artifacts`, {
+      method: "POST",
+      headers: creator,
+      body: JSON.stringify({ title: "Verification Dashboard", type: "dashboard", icon: "✓", audience: "organization", approved: true, content: "# Verification\n\n## Status\n\n- Published", sourceType: "inline", sourcePath: "verify.md" })
+    }));
+    assert(published.id, "publish returns id");
+    const shareUrl = published.shareUrl;
+    const updated = await json(await fetch(`${base}/api/artifacts/${published.id}`, {
+      method: "PATCH",
+      headers: creator,
+      body: JSON.stringify({ content: "# Verification\n\n## Status\n\n- Updated", sourceType: "inline", sourcePath: "verify-update.md" })
+    }));
+    assert(updated.shareUrl === shareUrl, "share URL remains stable after update");
+
+    const versions = await json(await fetch(`${base}/api/artifacts/${published.id}/versions`, { headers: creator }));
+    assert(versions.items.length >= 2, "versions endpoint returns history");
+    await json(await fetch(`${base}/api/artifacts/${published.id}/share`, {
+      method: "POST",
+      headers: creator,
+      body: JSON.stringify({ mode: "version", version: 1, audience: "organization" })
+    }));
+    const pinnedPage = await (await fetch(shareUrl, { headers: { "X-Codex-User": "viewer" } as any })).text();
+    const pinnedSrcdoc = decodeHtmlAttribute(/srcdoc="([\s\S]*?)"><\/iframe>/.exec(pinnedPage)?.[1] || "");
+    assert(pinnedSrcdoc.includes("<li>Published</li>") && !pinnedSrcdoc.includes("<li>Updated</li>"), "pinned share shows version 1");
+    await json(await fetch(`${base}/api/artifacts/${published.id}/share`, {
+      method: "POST",
+      headers: creator,
+      body: JSON.stringify({ mode: "latest", audience: "organization" })
+    }));
+
+    const viewer = await fetch(shareUrl, { headers: { Cookie: "codex_artifact_session=missing", "X-Codex-User": "viewer" } as any });
+    assert(viewer.status === 200, "org viewer can open share URL");
+    const denied = await fetch(shareUrl, { headers: outsider as any });
+    assert(denied.status === 404, "non-member cannot open share URL");
+    await json(await fetch(`${base}/api/artifacts/${published.id}/share`, {
+      method: "POST",
+      headers: creator,
+      body: JSON.stringify({ mode: "latest", audience: "private" })
+    }));
+    const privateDenied = await fetch(shareUrl, { headers: { "X-Codex-User": "viewer" } as any });
+    assert(privateDenied.status === 404, "private artifact is visible only to author");
+    await json(await fetch(`${base}/api/artifacts/${published.id}/share`, {
+      method: "POST",
+      headers: creator,
+      body: JSON.stringify({ mode: "latest", audience: "user:viewer" })
+    }));
+    const userAllowed = await fetch(shareUrl, { headers: { "X-Codex-User": "viewer" } as any });
+    assert(userAllowed.status === 200, "specific-user share allows named user");
+
+    await fetch(`${base}/api/admin/disable`, { method: "POST", headers: admin, body: "{}" });
+    const blocked = await fetch(`${base}/api/artifacts`, {
+      method: "POST",
+      headers: creator,
+      body: JSON.stringify({ title: "Blocked", type: "dashboard", approved: true, content: "## Nope" })
+    });
+    assert(blocked.status === 403, "disabled artifacts block publish");
+    await fetch(`${base}/api/admin/enable`, { method: "POST", headers: admin, body: "{}" });
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ permissions: { deny: ["Artifact"] } }, null, 2));
+    const configBlocked = await fetch(`${base}/api/artifacts`, {
+      method: "POST",
+      headers: creator,
+      body: JSON.stringify({ title: "Config Blocked", type: "dashboard", approved: true, content: "## Nope" })
+    });
+    assert(configBlocked.status === 403, "permissions.deny Artifact blocks publish");
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ permissions: { deny: [] } }, null, 2));
+
+    await json(await fetch(`${base}/api/admin/retention`, { method: "POST", headers: admin, body: JSON.stringify({ privateDays: 0, sharedDays: 365, creatorRoles: ["admin", "creator"] }) }));
+    const cleanup = await json(await fetch(`${base}/api/admin/retention:run`, { method: "POST", headers: admin, body: "{}" }));
+    assert(typeof cleanup.deleted === "number", "retention cleanup returns deleted count");
+
+    const compliance = await json(await fetch(`${base}/v1/compliance/code/artifacts`, { headers: admin }));
+    assert(compliance.items.some((item: any) => item.id === published.id), "compliance list includes artifact");
+    const exact = await json(await fetch(`${base}/v1/compliance/code/artifacts/${published.id}/versions/1`, { headers: admin }));
+    assert(exact.version.contentHtml.includes("Verification"), "compliance version retrieves content");
+
+    const deleted = await fetch(`${base}/v1/compliance/code/artifacts/${published.id}`, { method: "DELETE", headers: admin });
+    assert(deleted.status === 204, "compliance delete returns 204");
+    const revoked = await fetch(shareUrl, { headers: { "X-Codex-User": "viewer" } as any });
+    assert(revoked.status === 404, "deleted share URL is revoked");
+
+    console.log("Verified service parity workflow: approval gate, publish, stable share URL, update, pinned/latest share, audiences, constraints controls, retention, compliance list/version/delete, revocation.");
+  } finally {
+    if (fs.existsSync(CONFIG_PATH)) fs.writeFileSync(CONFIG_PATH, JSON.stringify({ permissions: { deny: [] } }, null, 2));
+    server.close();
+    try {
+      await once(server, "close");
+    } catch {
+      // Windows/sql.js can assert on a failing close path; verification result is already decided.
+    }
+  }
+}
+
+async function json(response: Response): Promise<any> {
+  const data = await response.text();
+  if (!response.ok) throw new Error(`${response.status}: ${data}`);
+  return data ? JSON.parse(data) : {};
+}
+
+function assert(condition: unknown, message: string): void {
+  if (!condition) throw new Error(`Verification failed: ${message}`);
+}
+
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

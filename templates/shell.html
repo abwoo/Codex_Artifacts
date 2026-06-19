@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{TITLE}}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #fbfaf6;
+      --ink: #161717;
+      --muted: #65645f;
+      --line: #ded9cc;
+      --panel: #ffffff;
+      --panel-2: #f1eee6;
+      --accent: #0f766e;
+      --accent-2: #b42318;
+      --gold: #b7791f;
+      --shadow: 0 18px 44px rgba(22, 23, 23, 0.11);
+      --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      --body: "Aptos", "Segoe UI", Candara, sans-serif;
+      --display: Georgia, "Times New Roman", serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      background:
+        linear-gradient(90deg, rgba(15, 118, 110, 0.06) 1px, transparent 1px) 0 0 / 28px 28px,
+        linear-gradient(180deg, rgba(180, 35, 24, 0.04) 1px, transparent 1px) 0 0 / 28px 28px,
+        var(--paper);
+      color: var(--ink);
+      font-family: var(--body);
+      line-height: 1.5;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+      font: 700 0.86rem var(--body);
+      min-height: 38px;
+      padding: 0 12px;
+      transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+    }
+
+    button:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 22px 0 56px;
+    }
+
+    .topbar {
+      align-items: center;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 54px;
+    }
+
+    .brand {
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .mark {
+      align-items: center;
+      background: var(--ink);
+      border-radius: 8px;
+      color: var(--paper);
+      display: inline-flex;
+      font-family: var(--mono);
+      font-weight: 800;
+      height: 34px;
+      justify-content: center;
+      letter-spacing: 0;
+      width: 34px;
+    }
+
+    .brand-text {
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-weight: 800;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .hero {
+      border-top: 3px solid var(--ink);
+      display: grid;
+      gap: 20px;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      padding: 34px 0 26px;
+    }
+
+    h1 {
+      font-family: var(--display);
+      font-size: clamp(2.4rem, 7vw, 5.7rem);
+      font-weight: 700;
+      letter-spacing: 0;
+      line-height: 0.93;
+      margin: 0;
+      max-width: 920px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 1.02rem;
+      margin: 18px 0 0;
+      max-width: 740px;
+    }
+
+    .ledger {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .ledger-row {
+      display: grid;
+      grid-template-columns: 98px minmax(0, 1fr);
+      min-height: 46px;
+    }
+
+    .ledger-row + .ledger-row { border-top: 1px solid var(--line); }
+
+    .ledger-k {
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 0.73rem;
+      font-weight: 900;
+      letter-spacing: 0;
+      padding: 13px 12px;
+      text-transform: uppercase;
+    }
+
+    .ledger-v {
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      overflow-wrap: anywhere;
+      padding: 12px;
+    }
+
+    .workspace {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: 230px minmax(0, 1fr);
+      align-items: start;
+    }
+
+    .rail {
+      border-left: 3px solid var(--ink);
+      padding-left: 14px;
+      position: sticky;
+      top: 16px;
+    }
+
+    .rail-title {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 900;
+      letter-spacing: 0;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    .nav {
+      display: grid;
+      gap: 6px;
+    }
+
+    .nav a {
+      border-radius: 8px;
+      color: var(--ink);
+      display: block;
+      font-size: 0.88rem;
+      font-weight: 800;
+      overflow: hidden;
+      padding: 8px 10px;
+      text-decoration: none;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .nav a:hover,
+    .nav a.active {
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    .artifact-content {
+      display: grid;
+      gap: 16px;
+    }
+
+    section {
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 26px rgba(22, 23, 23, 0.06);
+      padding: 20px;
+      scroll-margin-top: 18px;
+    }
+
+    section > h2:first-child {
+      margin-top: 0;
+    }
+
+    h2, h3 {
+      font-family: var(--display);
+      letter-spacing: 0;
+      line-height: 1.05;
+    }
+
+    h2 {
+      font-size: clamp(1.55rem, 3vw, 2.35rem);
+      margin: 26px 0 12px;
+    }
+
+    h3 {
+      font-size: 1.2rem;
+      margin: 22px 0 8px;
+    }
+
+    p { margin: 0 0 12px; }
+
+    ul, ol {
+      margin: 8px 0 12px;
+      padding-left: 24px;
+    }
+
+    li + li { margin-top: 6px; }
+
+    code {
+      background: #efe9dc;
+      border: 1px solid #dfd3bd;
+      border-radius: 5px;
+      font-family: var(--mono);
+      font-size: 0.88em;
+      padding: 1px 5px;
+    }
+
+    pre {
+      background: #171817;
+      border-radius: 8px;
+      color: #f7f1df;
+      overflow: auto;
+      padding: 14px;
+    }
+
+    pre code {
+      background: transparent;
+      border: 0;
+      color: inherit;
+      padding: 0;
+    }
+
+    table {
+      border-collapse: collapse;
+      display: block;
+      overflow-x: auto;
+      width: 100%;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel-2);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+
+    blockquote {
+      border-left: 4px solid var(--accent);
+      color: var(--muted);
+      margin: 12px 0;
+      padding: 4px 0 4px 14px;
+    }
+
+    .control-lab {
+      background: #171817;
+      border-radius: 8px;
+      color: #f7f1df;
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+      padding: 16px;
+    }
+
+    .control-lab label {
+      display: grid;
+      gap: 6px;
+      font-weight: 800;
+    }
+
+    .control-lab input[type="range"] {
+      accent-color: #f0b429;
+      width: 100%;
+    }
+
+    .control-lab textarea {
+      background: #242622;
+      border: 1px solid #4a4b45;
+      border-radius: 8px;
+      color: #f7f1df;
+      font-family: var(--mono);
+      min-height: 92px;
+      padding: 10px;
+      resize: vertical;
+      width: 100%;
+    }
+
+    .toast {
+      background: var(--ink);
+      border-radius: 8px;
+      bottom: 18px;
+      color: var(--paper);
+      font-weight: 800;
+      opacity: 0;
+      padding: 10px 12px;
+      pointer-events: none;
+      position: fixed;
+      right: 18px;
+      transform: translateY(8px);
+      transition: opacity 160ms ease, transform 160ms ease;
+      z-index: 20;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .auto-on {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    @media (max-width: 840px) {
+      .shell {
+        width: min(100% - 20px, 1180px);
+        padding-top: 12px;
+      }
+
+      .topbar,
+      .hero,
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        align-items: stretch;
+        display: grid;
+      }
+
+      .toolbar {
+        justify-content: start;
+      }
+
+      .rail {
+        border-left: 0;
+        border-top: 3px solid var(--ink);
+        padding: 12px 0 0;
+        position: static;
+      }
+
+      .nav {
+        display: flex;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .nav a {
+        flex: 0 0 auto;
+        max-width: 190px;
+      }
+
+      section {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark">CX</span>
+        <span class="brand-text">Local Artifact</span>
+      </div>
+      <div class="toolbar">
+        <button type="button" id="copyContent">Copy</button>
+        <button type="button" id="copyPrompt">Copy Prompt</button>
+        <button type="button" id="reloadPage">Refresh</button>
+        <button type="button" id="autoReload">Auto</button>
+      </div>
+    </header>
+
+    <div class="hero">
+      <div>
+        <h1>{{TITLE}}</h1>
+        <p class="subtitle">{{SUMMARY}}</p>
+      </div>
+      <aside class="ledger" aria-label="Artifact details">
+        <div class="ledger-row"><div class="ledger-k">Type</div><div class="ledger-v">{{TYPE}}</div></div>
+        <div class="ledger-row"><div class="ledger-k">Version</div><div class="ledger-v">{{VERSION}}</div></div>
+        <div class="ledger-row"><div class="ledger-k">Updated</div><div class="ledger-v">{{UPDATED_AT}}</div></div>
+        <div class="ledger-row"><div class="ledger-k">Source</div><div class="ledger-v">{{SOURCE}}</div></div>
+      </aside>
+    </div>
+
+    <div class="workspace">
+      <aside class="rail">
+        <div class="rail-title">Sections</div>
+        <nav class="nav" id="sectionNav" aria-label="Artifact sections"></nav>
+      </aside>
+      <main>
+        <article class="artifact-content" id="artifactContent">
+{{CONTENT}}
+        </article>
+      </main>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const content = document.getElementById('artifactContent');
+      const nav = document.getElementById('sectionNav');
+      const toast = document.getElementById('toast');
+      const showToast = (message) => {
+        toast.textContent = message;
+        toast.classList.add('show');
+        window.setTimeout(() => toast.classList.remove('show'), 1500);
+      };
+
+      const slug = (text, index) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `section-${index + 1}`;
+      const headings = Array.from(content.querySelectorAll('h2'));
+      headings.forEach((heading, index) => {
+        if (!heading.id) heading.id = slug(heading.textContent, index);
+        const link = document.createElement('a');
+        link.href = `#${heading.id}`;
+        link.textContent = heading.textContent;
+        nav.appendChild(link);
+      });
+      if (headings.length === 0) {
+        const link = document.createElement('a');
+        link.href = '#artifactContent';
+        link.textContent = 'Overview';
+        nav.appendChild(link);
+      }
+
+      const setActive = () => {
+        const links = Array.from(nav.querySelectorAll('a'));
+        let current = links[0];
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top < 140) current = links[index];
+        });
+        links.forEach(link => link.classList.toggle('active', link === current));
+      };
+      document.addEventListener('scroll', setActive, { passive: true });
+      setActive();
+
+      const copyText = async (text, label) => {
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast(label);
+        } catch {
+          const box = document.createElement('textarea');
+          box.value = text;
+          document.body.appendChild(box);
+          box.select();
+          document.execCommand('copy');
+          box.remove();
+          showToast(label);
+        }
+      };
+
+      document.getElementById('copyContent').addEventListener('click', () => {
+        copyText(content.innerText.trim(), 'Copied content');
+      });
+
+      document.getElementById('copyPrompt').addEventListener('click', () => {
+        const prompt = [
+          'Use this Codex local artifact as context.',
+          `Title: {{TITLE}}`,
+          `Type: {{TYPE}}`,
+          `Version: {{VERSION}}`,
+          '',
+          content.innerText.trim()
+        ].join('\n');
+        copyText(prompt, 'Copied prompt');
+      });
+
+      document.getElementById('reloadPage').addEventListener('click', () => location.reload());
+
+      let timer = null;
+      const autoButton = document.getElementById('autoReload');
+      autoButton.addEventListener('click', () => {
+        if (timer) {
+          window.clearInterval(timer);
+          timer = null;
+          autoButton.classList.remove('auto-on');
+          showToast('Auto refresh off');
+        } else {
+          timer = window.setInterval(() => location.reload(), 5000);
+          autoButton.classList.add('auto-on');
+          showToast('Auto refresh on');
+        }
+      });
+
+      document.querySelectorAll('[data-artifact-control]').forEach((control) => {
+        const output = document.querySelector(control.dataset.target);
+        const render = () => {
+          if (!output) return;
+          const level = control.value;
+          output.value = output.dataset.template.replaceAll('{{level}}', level);
+        };
+        control.addEventListener('input', render);
+        render();
+      });
+    })();
+  </script>
+</body>
+</html>
