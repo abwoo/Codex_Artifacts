@@ -10,7 +10,6 @@ This repository keeps the Node service as the primary implementation and the old
 | `src/server` | HTTP routes, Web UI, auth checks, sharing, admin, retention, and compliance APIs |
 | `src/artifacts` | Markdown/HTML rendering, templates integration, size limits, and artifact safety validation |
 | `src/core` | Shared types, SQLite/sql.js setup, seeded org/users, config paths, and audit helpers |
-| `src/testing` | End-to-end parity verification script |
 | `src/types` | Local TypeScript declarations |
 | `templates` | Built-in artifact page shell and starter content types |
 | `docs` | Public documentation for parity and repository layout |

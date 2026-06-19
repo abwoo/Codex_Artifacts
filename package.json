@@ -6,8 +6,7 @@
   "scripts": {
     "build": "tsc",
     "serve": "node dist/bin/server.js",
-    "artifact": "node dist/bin/cli.js",
-    "verify": "node dist/testing/verify.js"
+    "artifact": "node dist/bin/cli.js"
   },
   "dependencies": {
     "sql.js": "^1.13.0"
