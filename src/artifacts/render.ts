@@ -244,7 +244,7 @@ export function validateRenderedArtifact(html: string): void {
   const htmlWithoutCode = html.replace(/<pre\b[\s\S]*?<\/pre>/gi, "").replace(/<code\b[\s\S]*?<\/code>/gi, "");
   const forbidden: Array<[RegExp, string]> = [
     [/\bsrc\s*=\s*["'](?!data:|blob:|#)/i, "external src attribute"],
-    [/\bhref\s*=\s*["'](?!#|mailto:|tel:|data:|blob:|\/artifacts\/|\/share\/)/i, "external or multipage href"],
+    [/\bhref\s*=\s*["'](?!#)/i, "non-anchor href"],
     [/\bfetch\s*\(/i, "fetch()"],
     [/\bXMLHttpRequest\b/i, "XMLHttpRequest"],
     [/\bWebSocket\b/i, "WebSocket"],

@@ -200,7 +200,17 @@ function extractArtifactIdFromUrl(value: string): string {
   return value;
 }
 
-function captureSession(flags: Record<string, string>): { title: string; summary: string; project: string; changedFiles: string[]; gitDiff: string; testOutput: string } {
+function captureSession(flags: Record<string, string>): {
+  title: string;
+  summary: string;
+  project: string;
+  changedFiles: string[];
+  gitDiff: string;
+  testOutput: string;
+  gitHistory: string;
+  repoContext: string;
+  mcpContext: string;
+} {
   const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
   const runGit = (args: string[]) => {
     try {
@@ -214,14 +224,52 @@ function captureSession(flags: Record<string, string>): { title: string; summary
   const diff = runGit(["diff", "--", "."]);
   const project = flags.project || path.basename(process.cwd());
   const testOutput = flags["test-output"] ? fs.readFileSync(flags["test-output"], "utf8") : flags.tests || "";
+  const branch = runGit(["branch", "--show-current"]) || "unknown";
+  const commits = runGit(["log", "--oneline", "-8"]) || "No git commits captured.";
+  const remotes = runGit(["remote", "-v"]) || "No git remotes captured.";
+  const tracked = runGit(["ls-files"]);
+  const trackedFiles = tracked ? tracked.split(/\r?\n/).slice(0, 80) : [];
   return {
     title: flags.title || `${project} Session`,
     summary: flags.summary || "Captured from the current Codex workspace.",
     project,
     changedFiles,
     gitDiff: diff || "No working-tree diff captured.",
-    testOutput: testOutput || "No test output provided."
+    testOutput: testOutput || "No test output provided.",
+    gitHistory: [`Branch: ${branch}`, "", "Recent commits:", commits, "", "Remotes:", remotes].join("\n"),
+    repoContext: [`Tracked files sampled (${trackedFiles.length}${trackedFiles.length === 80 ? "+" : ""}):`, ...trackedFiles.map((file) => `- ${file}`)].join("\n"),
+    mcpContext: discoverMcpContext()
   };
+}
+
+function discoverMcpContext(): string {
+  const candidates = [
+    ".mcp.json",
+    ".cursor/mcp.json",
+    ".claude/settings.json",
+    ".codex/mcp.json"
+  ];
+  const lines: string[] = [];
+  for (const candidate of candidates) {
+    const file = path.join(process.cwd(), candidate);
+    if (!fs.existsSync(file)) continue;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+      const servers = mcpServerNames(parsed);
+      lines.push(`${candidate}: ${servers.length ? servers.join(", ") : "configuration detected"}`);
+    } catch {
+      lines.push(`${candidate}: configuration detected`);
+    }
+  }
+  return lines.length ? lines.join("\n") : "No MCP configuration files detected in this workspace.";
+}
+
+function mcpServerNames(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  const serverMap = record.mcpServers || record.servers;
+  if (serverMap && typeof serverMap === "object" && !Array.isArray(serverMap)) return Object.keys(serverMap as Record<string, unknown>);
+  return [];
 }
 
 async function request(baseUrl: string, method: string, routePath: string, user: string, body?: unknown): Promise<any> {

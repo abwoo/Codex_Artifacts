@@ -160,7 +160,7 @@ async function apiRoute(ctx: Context): Promise<void> {
     if (!user) return;
     if (artifactDisabled(handle.db, user.orgId)) return json(res, 403, { error: { code: "artifacts_disabled", message: "Artifact publishing is disabled.", requestId: id("req") } });
     if (!roleCanCreate(handle.db, user.orgId, user.role)) return json(res, 403, { error: { code: "artifact_role_denied", message: "Your role cannot create artifacts.", requestId: id("req") } });
-    const body = await bodyJson<{ title?: string; summary?: string; changedFiles?: string[]; testOutput?: string; gitDiff?: string; project?: string; approved?: boolean }>(req);
+    const body = await bodyJson<{ title?: string; summary?: string; changedFiles?: string[]; testOutput?: string; gitDiff?: string; project?: string; gitHistory?: string; repoContext?: string; mcpContext?: string; approved?: boolean }>(req);
     if (!body.approved) return json(res, 409, { error: { code: "approval_required", message: "Publishing requires explicit approval.", requestId: id("req") } });
     const content = sessionMarkdown(body);
     const artifact = publishArtifact(handle, user, body.title || "Codex Session", "dashboard", "◈", parseAudience("organization"), content, "session", body.project || "codex-session");
@@ -216,6 +216,25 @@ async function apiRoute(ctx: Context): Promise<void> {
     const artifact = loadArtifactForUser(handle, user, versionsMatch[1]);
     if (!artifact) return notFound(res);
     return json(res, 200, { items: versionsFor(handle, artifact.id) });
+  }
+  const liveMatch = /^\/api\/artifacts\/([^/]+)\/live$/.exec(url.pathname);
+  if (method === "GET" && liveMatch) {
+    const user = requireApiUser(ctx, "viewer");
+    if (!user) return;
+    const artifact = loadArtifactForUser(handle, user, liveMatch[1]);
+    if (!artifact) return notFound(res);
+    const latest = loadVersion(handle, artifact.id, artifact.latestVersionId);
+    return json(res, 200, liveResponse(artifact, latest));
+  }
+  const shareLiveMatch = /^\/api\/share\/([^/]+)\/live$/.exec(url.pathname);
+  if (method === "GET" && shareLiveMatch) {
+    const user = requireApiUser(ctx, "viewer");
+    if (!user) return;
+    const artifact = loadArtifactBySlug(handle, user, shareLiveMatch[1]);
+    if (!artifact) return notFound(res);
+    const versionRef = artifact.shareMode === "pinned_version" && artifact.pinnedVersionId ? artifact.pinnedVersionId : artifact.latestVersionId;
+    const version = loadVersion(handle, artifact.id, versionRef);
+    return json(res, 200, liveResponse(artifact, version));
   }
   const unpublishMatch = /^\/api\/artifacts\/([^/]+)\/unpublish$/.exec(url.pathname);
   if (method === "POST" && unpublishMatch) {
@@ -460,6 +479,18 @@ function shareResponse(artifact: ArtifactRecord) {
   };
 }
 
+function liveResponse(artifact: ArtifactRecord, version?: VersionRecord) {
+  return {
+    artifactId: artifact.id,
+    status: artifact.status,
+    shareMode: artifact.shareMode,
+    latestVersionId: artifact.latestVersionId,
+    servedVersionId: version?.id || null,
+    versionNumber: version?.versionNumber || null,
+    updatedAt: artifact.updatedAt
+  };
+}
+
 function parseAudience(value: string): { audience: Audience; audienceUserId: string | null } {
   if (value.startsWith("user:")) return { audience: "specific_users", audienceUserId: value.slice("user:".length) };
   if (value === "private") return { audience: "private", audienceUserId: null };
@@ -563,8 +594,9 @@ function publicBaseUrl(): string {
   return (process.env.CODEX_ARTIFACT_PUBLIC_BASE_URL || readConfig().publicBaseUrl || `http://127.0.0.1:${DEFAULT_PORT}`).replace(/\/$/, "");
 }
 
-function sessionMarkdown(body: { title?: string; summary?: string; changedFiles?: string[]; testOutput?: string; gitDiff?: string; project?: string }): string {
+function sessionMarkdown(body: { title?: string; summary?: string; changedFiles?: string[]; testOutput?: string; gitDiff?: string; project?: string; gitHistory?: string; repoContext?: string; mcpContext?: string }): string {
   const files = body.changedFiles?.length ? body.changedFiles.map((file) => `- ${file}`).join("\n") : "- No changed files captured.";
+  const changedCount = body.changedFiles?.length || 0;
   return `# ${body.title || "Codex Session"}
 
 ## Summary
@@ -575,9 +607,36 @@ ${body.summary || "No session summary provided."}
 
 ${body.project || "Unknown project"}
 
+## Live Status
+
+| Signal | Current value |
+| --- | --- |
+| Changed files | ${changedCount} |
+| Tests | ${body.testOutput ? "Captured" : "Not captured"} |
+| Git diff | ${body.gitDiff ? "Captured" : "Not captured"} |
+| MCP context | ${body.mcpContext && !body.mcpContext.startsWith("No MCP") ? "Detected" : "Not detected"} |
+
 ## Changed Files
 
 ${files}
+
+## Repository Context
+
+\`\`\`
+${body.repoContext || "No repository context captured."}
+\`\`\`
+
+## Git History
+
+\`\`\`
+${body.gitHistory || "No git history captured."}
+\`\`\`
+
+## MCP Connections
+
+\`\`\`
+${body.mcpContext || "No MCP context captured."}
+\`\`\`
 
 ## Test Output
 
@@ -695,10 +754,17 @@ async function sharedViewer(ctx: Context, user: User | undefined, slug: string):
 
 function renderViewer(ctx: Context, user: User, artifact: ArtifactRecord, version: VersionRecord): void {
   const versions = versionsFor(ctx.handle, artifact.id);
+  const isSharePage = ctx.url.pathname.startsWith("/share/");
+  const livePath = isSharePage ? `/api/share/${artifact.shareSlug}/live` : `/api/artifacts/${artifact.id}/live`;
+  const liveEnabled = artifact.shareMode === "latest" && !ctx.url.pathname.includes("/versions/");
   page(ctx.res, layout(artifact.title, user, `
     <section class="viewer-head">
       <div><p class="kicker">${escapeText(artifact.icon)} ${escapeText(artifact.type)} / ${escapeText(artifact.status)} / ${escapeText(artifact.audience)}</p><h1>${escapeText(artifact.title)}</h1><p>By ${escapeText(artifact.authorName || artifact.authorId)} · Share mode: <strong>${escapeText(artifact.shareMode)}</strong> · Stable share URL: <code>/share/${escapeText(artifact.shareSlug)}</code></p></div>
       <div class="actions"><a href="/artifacts">Gallery</a><a href="/share/${artifact.shareSlug}">Latest Share</a></div>
+    </section>
+    <section class="live-strip" data-live-enabled="${liveEnabled ? "1" : "0"}" data-live-path="${escapeText(livePath)}" data-current-version="${escapeText(version.id)}">
+      <strong>${liveEnabled ? "Live latest view" : "Pinned or historical view"}</strong>
+      <span>${liveEnabled ? "This page checks for newer versions and refreshes in place." : "This page stays on the selected version."}</span>
     </section>
     <section>
       <h2>Share</h2>
@@ -717,6 +783,25 @@ function renderViewer(ctx: Context, user: User, artifact: ArtifactRecord, versio
       </aside>
       <iframe title="${htmlAttr(artifact.title)}" sandbox="allow-scripts" srcdoc="${htmlAttr(version.contentHtml)}"></iframe>
     </section>
+    <script>
+      (() => {
+        const strip = document.querySelector('.live-strip');
+        if (!strip || strip.dataset.liveEnabled !== '1') return;
+        const currentVersion = strip.dataset.currentVersion;
+        const livePath = strip.dataset.livePath;
+        const check = async () => {
+          try {
+            const res = await fetch(livePath, { headers: { 'Accept': 'application/json' } });
+            if (!res.ok) return;
+            const state = await res.json();
+            if (state.servedVersionId && state.servedVersionId !== currentVersion) location.reload();
+          } catch {
+            // Keep the current view if the local service is unavailable.
+          }
+        };
+        window.setInterval(check, 5000);
+      })();
+    </script>
   `));
 }
 

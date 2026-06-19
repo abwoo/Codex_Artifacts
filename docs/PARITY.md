@@ -7,12 +7,14 @@ Codex Artifacts is a clean-room, local-first recreation of the public Claude Cod
 | Claude feature | Current Codex status | Evidence | Gap | Next action |
 | --- | --- | --- | --- | --- |
 | Publish a Code session artifact as a private page | Strong local parity | `publish` and `publish-session` create authenticated artifact pages | No native Codex app hook | Add deeper Codex app session ingestion later |
-| Stable share URL that updates in place | Strong local parity | Updates create new versions while share URL stays stable | None for local mode | Keep aligned with the local workflow |
+| Full session context artifact | Strong local parity | `publish-session` captures changed files, git diff, recent git history, tracked-file sample, test output, and MCP config names | It summarizes local context instead of receiving Codex internal transcript state directly | Add native Codex app session ingestion later |
+| Stable share URL that updates in place | Strong local parity | Updates create new versions while share URL stays stable; latest share viewers poll and refresh when a newer version appears | None for local mode | Keep aligned with the local workflow |
 | Latest-version and pinned-version sharing | Strong local parity | Share settings support latest or a selected version | None for local mode | Keep aligned with the local workflow |
 | Organization-only private sharing | Behavioral approximation | Seeded local org/users and authenticated share routes | No real Team/Enterprise identity | Add hosted auth/SSO only after deploy target exists |
 | Gallery with metadata | Strong local parity | Mine, shared, recent, deleted groups plus author/time/share metadata | UI is local and intentionally not Anthropic-branded | Polish UX without copying Claude pixels |
 | Single-page artifact with strict sandboxing | Strong local parity | Rendered HTML is served in a sandboxed iframe with CSP | Browser-specific hardening can always improve | Keep security hardening broad |
-| No external requests from artifact content | Strong local parity | External `src`, `href`, CSS imports, fetch/XHR/WebSocket/EventSource are blocked | Static validation is conservative, not a browser policy engine | Add browser-based network assertions later |
+| Single-page subnavigation | Strong local parity | Artifact content can only use in-page `#` anchors; viewer/gallery links live outside the sandboxed artifact content | None for local mode | Keep content links page-local |
+| No external requests from artifact content | Strong local parity | External `src`, non-anchor `href`, CSS imports, fetch/XHR/WebSocket/EventSource are blocked | Static validation is conservative, not a browser policy engine | Add browser-based network assertions later |
 | `.html`, `.htm`, `.md` input and 16 MiB rendered cap | Strong local parity | Renderer accepts only supported sources and enforces size | None for local mode | Keep aligned with the local workflow |
 | Admin disable and role-scoped creation | Strong local parity | Config/env/admin controls can block publishing | No enterprise policy sync | Map to hosted org settings later |
 | Retention and audit trail | Strong local parity | Admin cleanup and audit event records exist | No managed export pipeline | Add export format when cloud mode exists |
