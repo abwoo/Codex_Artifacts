@@ -15,6 +15,7 @@ This repository keeps the Node service as the primary implementation and the old
 | `templates` | Built-in artifact page shell and starter content types |
 | `docs` | Public documentation for parity and repository layout |
 | `examples` | Small input files for manual artifact updates |
+| `plugins` | Reusable Codex plugin template for installing this tool into Codex |
 | `scripts` | Legacy PowerShell MVP compatibility scripts |
 
 Generated local state stays out of git: databases, rendered artifacts, build output, local config, local sessions, and dependencies.

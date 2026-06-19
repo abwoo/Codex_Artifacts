@@ -182,8 +182,35 @@ export function markdownToHtml(markdown: string): string {
   return html.join("\n");
 }
 
+function htmlText(value: string): string {
+  return value
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[#>*`|{}()[\];:=.,]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractTag(content: string, tag: string): string | undefined {
+  const match = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i").exec(content);
+  return match?.[1]?.trim();
+}
+
+function artifactBody(content: string): string {
+  const trimmed = content.trimStart().replace(/^\uFEFF/, "");
+  if (/^(<!doctype\s+html|<html[\s>])/i.test(trimmed)) {
+    return extractTag(trimmed, "body") || trimmed.replace(/<!doctype[^>]*>/i, "").replace(/<\/?html[^>]*>/gi, "");
+  }
+  if (/^<section[\s>]/i.test(trimmed)) return trimmed;
+  return markdownToHtml(content);
+}
+
 function summary(content: string, type: string): string {
-  const plain = content.replace(/<[^>]+>/g, " ").replace(/[#>*`|\-]+/g, " ").replace(/\s+/g, " ").trim();
+  const title = htmlText(extractTag(content, "title") || "");
+  const heading = htmlText(extractTag(content, "h1") || extractTag(content, "h2") || "");
+  const paragraph = htmlText(extractTag(content, "p") || "");
+  const plain = title || heading || paragraph || htmlText(content).replace(/[-]+/g, " ").replace(/\s+/g, " ").trim();
   return plain ? `${plain.slice(0, 150)}${plain.length > 150 ? "..." : ""}` : `A local Codex ${type} artifact.`;
 }
 
@@ -196,8 +223,7 @@ export function renderArtifactDocument(input: {
   content: string;
 }): string {
   const template = fs.readFileSync(path.join(TEMPLATE_DIR, "shell.html"), "utf8");
-  const trimmed = input.content.trimStart();
-  const body = /^(<!doctype\s+html|<html[\s>]|<section[\s>])/i.test(trimmed) ? input.content : markdownToHtml(input.content);
+  const body = artifactBody(input.content);
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">`;
   const html = template
     .replace("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">", `<meta name="viewport" content="width=device-width, initial-scale=1">\n  ${csp}`)

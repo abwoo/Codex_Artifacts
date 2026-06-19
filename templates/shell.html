@@ -428,10 +428,10 @@
         <span class="brand-text">Local Artifact</span>
       </div>
       <div class="toolbar">
-        <button type="button" id="copyContent">Copy</button>
-        <button type="button" id="copyPrompt">Copy Prompt</button>
-        <button type="button" id="reloadPage">Refresh</button>
-        <button type="button" id="autoReload">Auto</button>
+        <button type="button" id="codexArtifactCopyContent">Copy</button>
+        <button type="button" id="codexArtifactCopyPrompt">Copy Prompt</button>
+        <button type="button" id="codexArtifactReloadPage">Refresh</button>
+        <button type="button" id="codexArtifactAutoReload">Auto</button>
       </div>
     </header>
 
@@ -451,22 +451,22 @@
     <div class="workspace">
       <aside class="rail">
         <div class="rail-title">Sections</div>
-        <nav class="nav" id="sectionNav" aria-label="Artifact sections"></nav>
+        <nav class="nav" id="codexArtifactSectionNav" aria-label="Artifact sections"></nav>
       </aside>
       <main>
-        <article class="artifact-content" id="artifactContent">
+        <article class="artifact-content" id="codexArtifactContent">
 {{CONTENT}}
         </article>
       </main>
     </div>
   </div>
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="toast" id="codexArtifactToast" role="status" aria-live="polite"></div>
 
   <script>
     (() => {
-      const content = document.getElementById('artifactContent');
-      const nav = document.getElementById('sectionNav');
-      const toast = document.getElementById('toast');
+      const content = document.getElementById('codexArtifactContent');
+      const nav = document.getElementById('codexArtifactSectionNav');
+      const toast = document.getElementById('codexArtifactToast');
       const showToast = (message) => {
         toast.textContent = message;
         toast.classList.add('show');
@@ -484,7 +484,7 @@
       });
       if (headings.length === 0) {
         const link = document.createElement('a');
-        link.href = '#artifactContent';
+        link.href = '#codexArtifactContent';
         link.textContent = 'Overview';
         nav.appendChild(link);
       }
@@ -515,11 +515,11 @@
         }
       };
 
-      document.getElementById('copyContent').addEventListener('click', () => {
+      document.getElementById('codexArtifactCopyContent').addEventListener('click', () => {
         copyText(content.innerText.trim(), 'Copied content');
       });
 
-      document.getElementById('copyPrompt').addEventListener('click', () => {
+      document.getElementById('codexArtifactCopyPrompt').addEventListener('click', () => {
         const prompt = [
           'Use this Codex local artifact as context.',
           `Title: {{TITLE}}`,
@@ -531,10 +531,10 @@
         copyText(prompt, 'Copied prompt');
       });
 
-      document.getElementById('reloadPage').addEventListener('click', () => location.reload());
+      document.getElementById('codexArtifactReloadPage').addEventListener('click', () => location.reload());
 
       let timer = null;
-      const autoButton = document.getElementById('autoReload');
+      const autoButton = document.getElementById('codexArtifactAutoReload');
       autoButton.addEventListener('click', () => {
         if (timer) {
           window.clearInterval(timer);

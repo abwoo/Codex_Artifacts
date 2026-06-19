@@ -1,0 +1,30 @@
+{
+  "name": "codex-artifacts",
+  "version": "0.1.0",
+  "description": "Local, clean-room Claude Code Artifacts-style publishing for Codex.",
+  "author": {
+    "name": "abwoo"
+  },
+  "homepage": "https://github.com/abwoo/Codex_Artifacts",
+  "repository": "https://github.com/abwoo/Codex_Artifacts",
+  "license": "MIT",
+  "keywords": ["codex", "artifacts", "claude-code", "local-first"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Artifacts",
+    "shortDescription": "Publish local Codex session artifacts.",
+    "longDescription": "Codex Artifacts helps Codex publish self-contained local HTML or Markdown artifacts through the local Codex_Artifacts service. It is a clean-room, local-first recreation of Claude Code Artifacts and is not affiliated with Anthropic.",
+    "developerName": "abwoo",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://github.com/abwoo/Codex_Artifacts",
+    "privacyPolicyURL": "https://github.com/abwoo/Codex_Artifacts",
+    "termsOfServiceURL": "https://github.com/abwoo/Codex_Artifacts",
+    "defaultPrompt": [
+      "Publish this session as a Codex Artifact",
+      "Create an interactive artifact page",
+      "Update my latest Codex Artifact"
+    ],
+    "brandColor": "#0F766E"
+  }
+}

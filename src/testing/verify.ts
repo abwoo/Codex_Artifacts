@@ -1,13 +1,16 @@
 import { once } from "node:events";
 import fs from "node:fs";
 import { startServer } from "../server/app";
-import { CONFIG_PATH, DEFAULT_PORT } from "../core/shared";
+import { CONFIG_PATH } from "../core/shared";
 
 async function main(): Promise<void> {
   process.env.CODEX_ARTIFACT_AUTO_OPEN = "0";
-  const server = await startServer(DEFAULT_PORT);
+  const server = await startServer(0);
   try {
-    const base = `http://127.0.0.1:${DEFAULT_PORT}`;
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Verification server did not expose a TCP port.");
+    const base = `http://127.0.0.1:${address.port}`;
+    process.env.CODEX_ARTIFACT_PUBLIC_BASE_URL = base;
     const creator = { "Content-Type": "application/json", "X-Codex-User": "creator" };
     const admin = { "Content-Type": "application/json", "X-Codex-User": "admin" };
     const outsider = { "Content-Type": "application/json", "X-Codex-User": "outsider" };
@@ -51,6 +54,24 @@ async function main(): Promise<void> {
       body: JSON.stringify({ title: "Blocked Fetch", type: "dashboard", approved: true, content: "<section><script>fetch('/api')</script></section>" })
     });
     assert(fetchBlocked.status === 500, "runtime fetch remains blocked");
+    const htmlBoundary = await json(await fetch(`${base}/api/artifacts`, {
+      method: "POST",
+      headers: creator,
+      body: JSON.stringify({
+        title: "HTML Boundary",
+        type: "tune",
+        approved: true,
+        content: "<!doctype html><html><head><title>Readable Math Lab</title><style>.bad-summary{color:red}</style></head><body><section><h2>Readable Quadratic Lab</h2><p>Explore vertex and roots.</p><button id=\"copyPrompt\">User copy</button><canvas id=\"quadCanvas\"></canvas><script>document.getElementById('copyPrompt').dataset.ready='1';</script></section></body></html>",
+        sourceType: "inline",
+        sourcePath: "boundary.html"
+      })
+    }));
+    const htmlBoundaryVersion = await json(await fetch(`${base}/v1/compliance/code/artifacts/${htmlBoundary.id}/versions/1`, { headers: admin }));
+    const boundaryHtml = htmlBoundaryVersion.version.contentHtml;
+    assert((boundaryHtml.match(/<!doctype html>/gi) || []).length === 1 && !boundaryHtml.includes("<body><!doctype"), "full HTML input is not nested inside shell");
+    assert(boundaryHtml.includes("id=\"codexArtifactCopyPrompt\"") && boundaryHtml.includes("id=\"copyPrompt\""), "shell and user copyPrompt ids coexist");
+    assert(boundaryHtml.includes("id=\"codexArtifactContent\"") && boundaryHtml.includes("id=\"codexArtifactSectionNav\""), "shell ids use codexArtifact prefix");
+    assert(boundaryHtml.includes("Readable Math Lab") && !boundaryHtml.includes("bad-summary{color:red}"), "summary prefers readable text over CSS");
     const shareUrl = published.shareUrl;
     const updated = await json(await fetch(`${base}/api/artifacts/${published.id}`, {
       method: "PATCH",
@@ -148,6 +169,7 @@ async function main(): Promise<void> {
 
     console.log("Verified service parity workflow: approval gate, session publish, stable share URL, update, pinned/latest share, audiences/public share, remix, gallery groups, constraints controls, retention, compliance list/audit/version/delete, revocation.");
   } finally {
+    delete process.env.CODEX_ARTIFACT_PUBLIC_BASE_URL;
     if (fs.existsSync(CONFIG_PATH)) fs.writeFileSync(CONFIG_PATH, JSON.stringify({ permissions: { deny: [] } }, null, 2));
     server.close();
     try {
