@@ -15,7 +15,7 @@ export const DEFAULT_PORT = Number(process.env.CODEX_ARTIFACT_PORT || 4177);
 
 export type Role = "admin" | "creator" | "viewer";
 export type ArtifactType = "dashboard" | "pr" | "compare" | "tune";
-export type Audience = "private" | "organization" | "specific_users";
+export type Audience = "private" | "organization" | "specific_users" | "public";
 export type ShareMode = "latest" | "pinned_version";
 
 export interface User {
@@ -54,6 +54,16 @@ export interface VersionRecord {
   contentHtml: string;
   sourceType: string;
   sourcePath: string;
+  createdAt: string;
+}
+
+export interface AuditEventRecord {
+  id: string;
+  actorId: string;
+  orgId: string;
+  artifactId: string | null;
+  action: string;
+  metadata: string;
   createdAt: string;
 }
 
@@ -240,16 +250,16 @@ export function audit(handle: DbHandle, actorId: string, orgId: string, artifact
   ]);
 }
 
-export function readConfig(): { disableArtifact?: boolean; permissions?: { deny?: string[] } } {
+export function readConfig(): { disableArtifact?: boolean; publicBaseUrl?: string; permissions?: { deny?: string[] } } {
   if (!fs.existsSync(CONFIG_PATH)) return {};
   try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")) as { disableArtifact?: boolean; permissions?: { deny?: string[] } };
+    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")) as { disableArtifact?: boolean; publicBaseUrl?: string; permissions?: { deny?: string[] } };
   } catch {
     return {};
   }
 }
 
-export function writeConfig(config: { disableArtifact?: boolean; permissions?: { deny?: string[] } }): void {
+export function writeConfig(config: { disableArtifact?: boolean; publicBaseUrl?: string; permissions?: { deny?: string[] } }): void {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 

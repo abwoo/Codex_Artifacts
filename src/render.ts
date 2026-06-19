@@ -215,8 +215,8 @@ export function renderArtifactDocument(input: {
 export function validateRenderedArtifact(html: string): void {
   const size = Buffer.byteLength(html, "utf8");
   if (size > MAX_RENDERED_BYTES) throw new Error(`Rendered artifact is ${size} bytes, over the 16 MiB limit.`);
+  const htmlWithoutCode = html.replace(/<pre\b[\s\S]*?<\/pre>/gi, "").replace(/<code\b[\s\S]*?<\/code>/gi, "");
   const forbidden: Array<[RegExp, string]> = [
-    [/https?:\/\//i, "external http(s) URL"],
     [/\bsrc\s*=\s*["'](?!data:|blob:|#)/i, "external src attribute"],
     [/\bhref\s*=\s*["'](?!#|mailto:|tel:|data:|blob:|\/artifacts\/|\/share\/)/i, "external or multipage href"],
     [/\bfetch\s*\(/i, "fetch()"],
@@ -227,7 +227,7 @@ export function validateRenderedArtifact(html: string): void {
     [/\burl\(\s*["']?https?:/i, "external CSS URL"]
   ];
   for (const [pattern, label] of forbidden) {
-    if (pattern.test(html)) throw new Error(`Artifact contains forbidden ${label}.`);
+    if (pattern.test(htmlWithoutCode)) throw new Error(`Artifact contains forbidden ${label}.`);
   }
 }
 

@@ -6,6 +6,7 @@ import {
   ARTIFACT_DIR,
   ArtifactRecord,
   ArtifactType,
+  AuditEventRecord,
   Audience,
   DEFAULT_PORT,
   DbHandle,
@@ -82,6 +83,11 @@ async function route(ctx: Context): Promise<void> {
 
   if (pathname.startsWith("/api/")) return apiRoute(ctx);
   if (pathname.startsWith("/v1/compliance/")) return complianceRoute(ctx);
+  const publicShareMatch = /^\/share\/([^/]+)$/.exec(pathname);
+  if (method === "GET" && publicShareMatch) {
+    const publicArtifact = loadPublicArtifactBySlug(ctx.handle, publicShareMatch[1]);
+    if (publicArtifact) return sharedViewer(ctx, undefined, publicShareMatch[1]);
+  }
 
   const user = requireWebUser(ctx);
   if (!user) return;
@@ -101,6 +107,8 @@ async function route(ctx: Context): Promise<void> {
   if (method === "GET" && versionMatch) return artifactViewer(ctx, user, versionMatch[1], versionMatch[2]);
   const webShareMatch = /^\/artifacts\/([^/]+)\/share$/.exec(pathname);
   if (method === "POST" && webShareMatch) return webShareSettings(ctx, user, webShareMatch[1]);
+  const webRemixMatch = /^\/artifacts\/([^/]+)\/remix$/.exec(pathname);
+  if (method === "POST" && webRemixMatch) return webRemix(ctx, user, webRemixMatch[1]);
   const artifactMatch = /^\/artifacts\/([^/]+)$/.exec(pathname);
   if (method === "GET" && artifactMatch) return artifactViewer(ctx, user, artifactMatch[1]);
   const shareMatch = /^\/share\/([^/]+)$/.exec(pathname);
@@ -146,6 +154,17 @@ async function apiRoute(ctx: Context): Promise<void> {
     const body = await bodyJson<{ title: string; type: ArtifactType; icon?: string; audience?: string; content: string; sourceType?: string; sourcePath?: string; approved?: boolean }>(req);
     if (!body.approved) return json(res, 409, { error: { code: "approval_required", message: "Publishing requires explicit approval.", requestId: id("req") } });
     const artifact = publishArtifact(handle, user, body.title, body.type || "dashboard", body.icon || "◈", parseAudience(body.audience || "organization"), body.content, body.sourceType || "inline", body.sourcePath || "stdin");
+    return json(res, 201, artifactResponse(artifact));
+  }
+  if (method === "POST" && url.pathname === "/api/artifacts/session") {
+    const user = requireApiUser(ctx, "creator");
+    if (!user) return;
+    if (artifactDisabled(handle.db, user.orgId)) return json(res, 403, { error: { code: "artifacts_disabled", message: "Artifact publishing is disabled.", requestId: id("req") } });
+    if (!roleCanCreate(handle.db, user.orgId, user.role)) return json(res, 403, { error: { code: "artifact_role_denied", message: "Your role cannot create artifacts.", requestId: id("req") } });
+    const body = await bodyJson<{ title?: string; summary?: string; changedFiles?: string[]; testOutput?: string; gitDiff?: string; project?: string; approved?: boolean }>(req);
+    if (!body.approved) return json(res, 409, { error: { code: "approval_required", message: "Publishing requires explicit approval.", requestId: id("req") } });
+    const content = sessionMarkdown(body);
+    const artifact = publishArtifact(handle, user, body.title || "Codex Session", "dashboard", "◈", parseAudience("organization"), content, "session", body.project || "codex-session");
     return json(res, 201, artifactResponse(artifact));
   }
   if (method === "PATCH" && artifactMatch) {
@@ -212,6 +231,14 @@ async function apiRoute(ctx: Context): Promise<void> {
     const ok = setArtifactStatus(handle, user, artifactMatch[1], "deleted");
     return ok ? json(res, 204, null) : notFound(res);
   }
+  const remixMatch = /^\/api\/artifacts\/([^/]+)\/remix$/.exec(url.pathname);
+  if (method === "POST" && remixMatch) {
+    const user = requireApiUser(ctx, "creator");
+    if (!user) return;
+    const remix = remixArtifact(handle, user, remixMatch[1]);
+    if (!remix) return notFound(res);
+    return json(res, 201, artifactResponse(remix));
+  }
   if (method === "POST" && url.pathname === "/api/admin/enable") {
     const user = requireApiUser(ctx, "admin");
     if (!user) return;
@@ -245,7 +272,23 @@ async function complianceRoute(ctx: Context): Promise<void> {
   const user = requireApiUser(ctx, method === "DELETE" ? "admin" : "viewer");
   if (!user) return;
   if (method === "GET" && url.pathname === "/v1/compliance/code/artifacts") {
-    return json(res, 200, { items: listArtifacts(handle, user, true), nextCursor: null });
+    const status = url.searchParams.get("status") || undefined;
+    const limit = Math.min(Number(url.searchParams.get("limit") || "50"), 200);
+    const cursor = url.searchParams.get("cursor") || undefined;
+    const items = listArtifacts(handle, user, true).filter((artifact) => !status || artifact.status === status);
+    const start = cursor ? Math.max(0, Number(cursor)) : 0;
+    const pageItems = items.slice(start, start + limit);
+    const nextCursor = start + limit < items.length ? String(start + limit) : null;
+    return json(res, 200, { items: pageItems.map(artifactResponse), nextCursor, hasMore: Boolean(nextCursor) });
+  }
+  if (method === "GET" && url.pathname === "/v1/compliance/code/audit-events") {
+    if (!roleAtLeast(user.role, "admin")) return json(res, 403, { error: { code: "forbidden", message: "Requires admin role.", requestId: id("req") } });
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || "50"), 1), 200);
+    const cursor = url.searchParams.get("cursor") || undefined;
+    const action = url.searchParams.get("action") || undefined;
+    const artifactId = url.searchParams.get("artifactId") || undefined;
+    const response = auditEventsResponse(handle, user, { limit, cursor, action, artifactId });
+    return json(res, 200, response);
   }
   const versionMatch = /^\/v1\/compliance\/code\/artifacts\/([^/]+)\/versions\/([^/]+)$/.exec(url.pathname);
   if (method === "GET" && versionMatch) {
@@ -363,6 +406,15 @@ function loadArtifactBySlug(handle: DbHandle, user: User, slug: string): Artifac
   return canViewAudience(artifact, user) ? artifact : undefined;
 }
 
+function loadPublicArtifactBySlug(handle: DbHandle, slug: string): ArtifactRecord | undefined {
+  return getOne<ArtifactRecord>(handle.db, `
+    SELECT ${artifactSelect()}
+    FROM artifacts a
+    JOIN users u ON u.id = a.author_id
+    WHERE a.share_slug = ? AND a.status = 'published' AND a.audience = 'public'
+  `, [slug]);
+}
+
 function listArtifacts(handle: DbHandle, user: User, includeDeleted = false): ArtifactRecord[] {
   return all<ArtifactRecord>(handle.db, `
     SELECT ${artifactSelect()}
@@ -389,17 +441,19 @@ function loadVersion(handle: DbHandle, artifactId: string, versionRef: string): 
 }
 
 function artifactResponse(artifact: ArtifactRecord) {
+  const baseUrl = publicBaseUrl();
   return {
     ...artifact,
-    url: `http://127.0.0.1:${DEFAULT_PORT}/artifacts/${artifact.id}`,
-    shareUrl: `http://127.0.0.1:${DEFAULT_PORT}/share/${artifact.shareSlug}`
+    url: `${baseUrl}/artifacts/${artifact.id}`,
+    shareUrl: `${baseUrl}/share/${artifact.shareSlug}`
   };
 }
 
 function shareResponse(artifact: ArtifactRecord) {
+  const baseUrl = publicBaseUrl();
   return {
     artifactId: artifact.id,
-    shareUrl: `http://127.0.0.1:${DEFAULT_PORT}/share/${artifact.shareSlug}`,
+    shareUrl: `${baseUrl}/share/${artifact.shareSlug}`,
     mode: artifact.shareMode,
     pinnedVersionId: artifact.pinnedVersionId,
     audience: artifact.audience,
@@ -410,11 +464,13 @@ function shareResponse(artifact: ArtifactRecord) {
 function parseAudience(value: string): { audience: Audience; audienceUserId: string | null } {
   if (value.startsWith("user:")) return { audience: "specific_users", audienceUserId: value.slice("user:".length) };
   if (value === "private") return { audience: "private", audienceUserId: null };
+  if (value === "public") return { audience: "public", audienceUserId: null };
   return { audience: "organization", audienceUserId: null };
 }
 
 function canViewAudience(artifact: ArtifactRecord, user: User): boolean {
   if (artifact.authorId === user.id) return true;
+  if (artifact.audience === "public") return true;
   if (artifact.audience === "organization") return true;
   if (artifact.audience === "specific_users") return artifact.audienceUserId === user.id;
   return false;
@@ -464,8 +520,89 @@ function galleryResponse(handle: DbHandle, user: User) {
   return {
     mine: visible.filter((artifact) => artifact.authorId === user.id).map(artifactResponse),
     sharedWithMe: visible.filter((artifact) => artifact.authorId !== user.id).map(artifactResponse),
+    recent: visible.slice(0, 20).map(artifactResponse),
+    deleted: listArtifacts(handle, user, true).filter((artifact) => artifact.status === "deleted").map(artifactResponse),
     nextCursor: null
   };
+}
+
+function auditEventsResponse(handle: DbHandle, user: User, options: { limit: number; cursor?: string; action?: string; artifactId?: string }) {
+  const clauses = ["org_id = ?"];
+  const params: unknown[] = [user.orgId];
+  if (options.action) {
+    clauses.push("action = ?");
+    params.push(options.action);
+  }
+  if (options.artifactId) {
+    clauses.push("artifact_id = ?");
+    params.push(options.artifactId);
+  }
+  const rows = all<AuditEventRecord>(handle.db, `
+    SELECT id, actor_id AS actorId, org_id AS orgId, artifact_id AS artifactId, action, metadata, created_at AS createdAt
+    FROM audit_events
+    WHERE ${clauses.join(" AND ")}
+    ORDER BY created_at DESC, id DESC
+  `, params);
+  const start = options.cursor ? Math.max(0, Number(options.cursor)) : 0;
+  const items = rows.slice(start, start + options.limit).map((event) => ({
+    ...event,
+    metadata: safeJson(event.metadata)
+  }));
+  const nextCursor = start + options.limit < rows.length ? String(start + options.limit) : null;
+  return { items, nextCursor, hasMore: Boolean(nextCursor) };
+}
+
+function safeJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function publicBaseUrl(): string {
+  return (process.env.CODEX_ARTIFACT_PUBLIC_BASE_URL || readConfig().publicBaseUrl || `http://127.0.0.1:${DEFAULT_PORT}`).replace(/\/$/, "");
+}
+
+function sessionMarkdown(body: { title?: string; summary?: string; changedFiles?: string[]; testOutput?: string; gitDiff?: string; project?: string }): string {
+  const files = body.changedFiles?.length ? body.changedFiles.map((file) => `- ${file}`).join("\n") : "- No changed files captured.";
+  return `# ${body.title || "Codex Session"}
+
+## Summary
+
+${body.summary || "No session summary provided."}
+
+## Project
+
+${body.project || "Unknown project"}
+
+## Changed Files
+
+${files}
+
+## Test Output
+
+\`\`\`
+${body.testOutput || "No test output captured."}
+\`\`\`
+
+## Git Diff
+
+\`\`\`diff
+${body.gitDiff || "No git diff captured."}
+\`\`\`
+`;
+}
+
+function remixArtifact(handle: DbHandle, user: User, artifactId: string): ArtifactRecord | undefined {
+  const source = loadArtifactForUser(handle, user, artifactId, false, true);
+  if (!source || !canViewAudience(source, user)) return undefined;
+  const version = loadVersion(handle, source.id, source.latestVersionId);
+  if (!version) return undefined;
+  const remix = publishArtifact(handle, user, `Remix of ${source.title}`, source.type, source.icon, parseAudience("private"), version.contentHtml, "remix", source.id);
+  audit(handle, user.id, user.orgId, remix.id, "remix", { sourceArtifactId: source.id });
+  handle.save();
+  return remix;
 }
 
 function adminSettingsResponse(handle: DbHandle, orgId: string) {
@@ -519,6 +656,10 @@ async function artifactsPage(ctx: Context, user: User): Promise<void> {
     <section class="grid">${gallery.mine.map((item) => artifactCard(item)).join("") || `<p>No artifacts published yet.</p>`}</section>
     <h2>Shared with me</h2>
     <section class="grid">${gallery.sharedWithMe.map((item) => artifactCard(item)).join("") || `<p>No shared artifacts yet.</p>`}</section>
+    <h2>Recent</h2>
+    <section class="grid">${gallery.recent.map((item) => artifactCard(item)).join("") || `<p>No recent artifacts yet.</p>`}</section>
+    <h2>Deleted</h2>
+    <section class="grid">${gallery.deleted.map((item) => artifactCard(item)).join("") || `<p>No deleted artifacts.</p>`}</section>
   `));
 }
 
@@ -542,15 +683,15 @@ async function artifactViewer(ctx: Context, user: User, artifactId: string, vers
   renderViewer(ctx, user, artifact, version);
 }
 
-async function sharedViewer(ctx: Context, user: User, slug: string): Promise<void> {
-  const artifact = loadArtifactBySlug(ctx.handle, user, slug);
+async function sharedViewer(ctx: Context, user: User | undefined, slug: string): Promise<void> {
+  const artifact = user ? loadArtifactBySlug(ctx.handle, user, slug) : loadPublicArtifactBySlug(ctx.handle, slug);
   if (!artifact) return notFound(ctx.res);
   const versionRef = artifact.shareMode === "pinned_version" && artifact.pinnedVersionId ? artifact.pinnedVersionId : artifact.latestVersionId;
   const version = loadVersion(ctx.handle, artifact.id, versionRef);
   if (!version) return notFound(ctx.res);
-  audit(ctx.handle, user.id, user.orgId, artifact.id, "share_open", {});
+  audit(ctx.handle, user?.id || "anonymous", artifact.orgId, artifact.id, "share_open", {});
   ctx.handle.save();
-  renderViewer(ctx, user, artifact, version);
+  renderViewer(ctx, user || { id: "anonymous", displayName: "anonymous", defaultOrgId: artifact.orgId, role: "viewer", orgId: artifact.orgId }, artifact, version);
 }
 
 function renderViewer(ctx: Context, user: User, artifact: ArtifactRecord, version: VersionRecord): void {
@@ -565,9 +706,10 @@ function renderViewer(ctx: Context, user: User, artifact: ArtifactRecord, versio
       <form method="post" action="/artifacts/${artifact.id}/share" class="inline-form">
         <label>Mode <select name="mode"><option value="latest"${artifact.shareMode === "latest" ? " selected" : ""}>Always share latest version</option><option value="version"${artifact.shareMode === "pinned_version" ? " selected" : ""}>Share selected version</option></select></label>
         <label>Version <input name="version" value="${version.versionNumber}" inputmode="numeric"></label>
-        <label>Audience <select name="audience"><option value="private"${artifact.audience === "private" ? " selected" : ""}>Private</option><option value="organization"${artifact.audience === "organization" ? " selected" : ""}>Organization</option><option value="user:viewer"${artifact.audienceUserId === "viewer" ? " selected" : ""}>User: viewer</option></select></label>
+        <label>Audience <select name="audience"><option value="private"${artifact.audience === "private" ? " selected" : ""}>Private</option><option value="organization"${artifact.audience === "organization" ? " selected" : ""}>Organization</option><option value="public"${artifact.audience === "public" ? " selected" : ""}>Public</option><option value="user:viewer"${artifact.audienceUserId === "viewer" ? " selected" : ""}>User: viewer</option></select></label>
         <button>Apply share settings</button>
       </form>
+      <form method="post" action="/artifacts/${artifact.id}/remix"><button>Remix</button></form>
     </section>
     <section class="viewer-layout">
       <aside class="version-list">
@@ -595,6 +737,12 @@ async function webShareSettings(ctx: Context, user: User, artifactId: string): P
   const form = new URLSearchParams(await bodyText(ctx.req));
   configureShare(ctx.handle, user, artifactId, form.get("mode") || "latest", Number(form.get("version") || "1"), form.get("audience") || "organization");
   redirect(ctx.res, `/artifacts/${artifactId}`);
+}
+
+async function webRemix(ctx: Context, user: User, artifactId: string): Promise<void> {
+  const artifact = remixArtifact(ctx.handle, user, artifactId);
+  if (!artifact) return notFound(ctx.res);
+  redirect(ctx.res, `/artifacts/${artifact.id}`);
 }
 
 async function adminSettings(ctx: Context, user: User): Promise<void> {
@@ -717,6 +865,20 @@ export async function runCli(argv: string[]): Promise<void> {
     console.log(`CLI user set to ${user}`);
     return;
   }
+  if (command === "config") {
+    const action = positionals[0];
+    if (action === "hosted-url") {
+      const value = String(flags.set || positionals[1] || "");
+      const current = readConfig();
+      if (value) {
+        writeConfig({ ...current, publicBaseUrl: value.replace(/\/$/, "") });
+        console.log(`Hosted URL set to ${value.replace(/\/$/, "")}`);
+      } else {
+        console.log(current.publicBaseUrl || "");
+      }
+      return;
+    }
+  }
 
   const session = readCliSession();
   const baseUrl = String(flags.host || `http://127.0.0.1:${DEFAULT_PORT}`);
@@ -726,6 +888,16 @@ export async function runCli(argv: string[]): Promise<void> {
     if (!flags.yes && !await confirmPublish(flags.title || "Codex Artifact")) throw new Error("Publish cancelled.");
     const input = sourceContent(flags.from, type, flags.from === "-" ? fs.readFileSync(0, "utf8") : undefined);
     const response = await request(baseUrl, "POST", "/api/artifacts", session.user, { title: flags.title || "Codex Artifact", type, icon: flags.icon || "◈", audience: flags.audience || "organization", approved: true, ...input });
+    writeCliSession({ ...session, lastArtifactId: response.id });
+    console.log(`Published ${response.id}`);
+    console.log(response.shareUrl);
+    if (process.env.CODEX_ARTIFACT_AUTO_OPEN !== "0") openBrowser(response.url);
+    return;
+  }
+  if (command === "publish-session") {
+    if (!flags.yes && !await confirmPublish(flags.title || "Codex Session")) throw new Error("Publish cancelled.");
+    const sessionArtifact = captureSession(flags);
+    const response = await request(baseUrl, "POST", "/api/artifacts/session", session.user, { ...sessionArtifact, approved: true });
     writeCliSession({ ...session, lastArtifactId: response.id });
     console.log(`Published ${response.id}`);
     console.log(response.shareUrl);
@@ -754,6 +926,13 @@ export async function runCli(argv: string[]): Promise<void> {
       const artifact = await request(baseUrl, "GET", `/api/artifacts/${positionals[0]}`, session.user);
       console.log(artifact.shareUrl);
     }
+    return;
+  }
+  if (command === "remix") {
+    const response = await request(baseUrl, "POST", `/api/artifacts/${positionals[0]}/remix`, session.user, {});
+    writeCliSession({ ...session, lastArtifactId: response.id });
+    console.log(`Remixed ${response.id}`);
+    console.log(response.shareUrl);
     return;
   }
   if (command === "open") {
@@ -866,6 +1045,30 @@ function extractArtifactIdFromUrl(value: string): string {
   return value;
 }
 
+function captureSession(flags: Record<string, string>): { title: string; summary: string; project: string; changedFiles: string[]; gitDiff: string; testOutput: string } {
+  const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+  const runGit = (args: string[]) => {
+    try {
+      return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      return "";
+    }
+  };
+  const status = runGit(["status", "--short"]);
+  const changedFiles = status ? status.split(/\r?\n/).map((line) => line.slice(3).trim()).filter(Boolean) : [];
+  const diff = runGit(["diff", "--", "."]);
+  const project = flags.project || path.basename(process.cwd());
+  const testOutput = flags["test-output"] ? fs.readFileSync(flags["test-output"], "utf8") : flags.tests || "";
+  return {
+    title: flags.title || `${project} Session`,
+    summary: flags.summary || "Captured from the current Codex workspace.",
+    project,
+    changedFiles,
+    gitDiff: diff || "No working-tree diff captured.",
+    testOutput: testOutput || "No test output provided."
+  };
+}
+
 async function request(baseUrl: string, method: string, routePath: string, user: string, body?: unknown): Promise<any> {
   const res = await fetch(new URL(routePath, baseUrl), {
     method,
@@ -892,10 +1095,13 @@ Commands:
   artifact serve
   artifact login --user <admin|creator|viewer|outsider>
   artifact publish --title "..." --type dashboard --from <file|->
+  artifact publish-session --title "..." --summary "..." --test-output <file> --yes
+  artifact config hosted-url --set https://artifacts.example.com
   artifact update <id> --from <file|->
   artifact open <id>
   artifact share <id>
   artifact share <id> --mode latest|version --version <number> --audience private|organization|user:<name>
+  artifact remix <id>
   artifact versions <id>
   artifact view <id> --version <number>
   artifact reopen
